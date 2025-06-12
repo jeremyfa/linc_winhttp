@@ -1,0 +1,11 @@
+<xml>
+
+    <files id='haxe'>
+        <compilerflag value='-I${LINC_WINHTTP_PATH}../lib/'/>
+        <compilerflag value='-I${LINC_WINHTTP_PATH}linc/'/>
+        <file name='${LINC_WINHTTP_PATH}../lib/WinHttpWinVersion.cpp' />
+        <file name='${LINC_WINHTTP_PATH}../lib/WinHttpWrapper.cpp' />
+        <file name='${LINC_WINHTTP_PATH}linc/linc_winhttp.cpp' />
+    </files>
+
+</xml>
