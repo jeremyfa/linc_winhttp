@@ -9,7 +9,6 @@
 #include <memory>
 #include <vector>
 #include <map>
-#include <iostream>
 
 namespace linc {
     namespace winhttp {
@@ -20,7 +19,7 @@ namespace linc {
          * @return wstring representation (UTF-16 on Windows)
          * @throws std::runtime_error if conversion fails
          */
-        std::wstring utf8_to_wstring(const char* utf8_cstr) {
+        std::wstring utf8ToWstring(const char* utf8_cstr) {
             if (!utf8_cstr || *utf8_cstr == '\0') {
                 return std::wstring();
             }
@@ -45,7 +44,7 @@ namespace linc {
          * @return UTF-8 encoded std::string
          * @throws std::runtime_error if conversion fails
          */
-        std::string wstring_to_utf8(const std::wstring& wstr) {
+        std::string wstringToUtf8(const std::wstring& wstr) {
             if (wstr.empty()) {
                 return std::string();
             }
@@ -64,21 +63,44 @@ namespace linc {
             return result;
         }
 
+        Array<unsigned char> vectorToHaxeBytes(const std::vector<uint8_t>& binary_data) {
+
+            if (binary_data.empty()) {
+                // Return empty array for empty vector
+                return new Array_obj<unsigned char>(0, 0);
+            }
+
+            int length = static_cast<int>(binary_data.size());
+            Array<unsigned char> haxe_bytes = new Array_obj<unsigned char>(length, length);
+
+            // Convert vector data to unsigned char* and copy
+            const unsigned char* source_ptr = reinterpret_cast<const unsigned char*>(binary_data.data());
+            memcpy(haxe_bytes->GetBase(), source_ptr, length);
+
+            // Note: No need to free binary_data - it's managed by std::vector
+
+            return haxe_bytes;
+        }
+
         ::Dynamic responseToHxObject(::WinHttpWrapper::HttpResponse& response) {
 
             hx::Anon result = hx::Anon_obj::Create();
 
-            result->Add(HX_CSTRING("headers"), response.header.empty() ? null() : ::String(wstring_to_utf8(response.header).c_str()));
-            result->Add(HX_CSTRING("text"), ::String(response.text.c_str()));
+            result->Add(HX_CSTRING("headers"), response.header.empty() ? null() : ::String(wstringToUtf8(response.header).c_str()));
+            result->Add(HX_CSTRING("content"), response.isBinary ? null() : ::String(response.text.c_str()));
             result->Add(HX_CSTRING("contentLength"), response.contentLength);
             result->Add(HX_CSTRING("status"), response.statusCode);
-            result->Add(HX_CSTRING("error"), response.error.empty() ? null() : ::String(wstring_to_utf8(response.error).c_str()));
+            result->Add(HX_CSTRING("error"), response.error.empty() ? null() : ::String(wstringToUtf8(response.error).c_str()));
+
+            if (response.isBinary) {
+                result->Add(HX_CSTRING("binaryContent"), vectorToHaxeBytes(response.binaryData));
+            }
 
             return result;
 
         }
 
-        ::Dynamic sendHttpRequest(int requestId, ::String domain, int port, bool https, ::String path, int method, ::String body, ::String headers, ::String proxy, int timeout) {
+        ::Dynamic sendHttpRequest(::String domain, int port, bool https, ::String path, int method, ::String body, ::String headers, ::String proxy, int timeout) {
 
             if (method < 0 || method > 3) {
                 hx::Anon errResult = hx::Anon_obj::Create();
@@ -87,10 +109,10 @@ namespace linc {
                 return errResult;
             }
 
-            const std::wstring _domain = utf8_to_wstring(domain.c_str());
-            const std::wstring _path = ::hx::IsNull(body) ? L"" : utf8_to_wstring(path.c_str());
-            const std::string _body = ::hx::IsNull(body) ? "" : std::string(path.c_str());
-            const std::wstring _headers = ::hx::IsNull(headers) ? L"" : utf8_to_wstring(headers.c_str());
+            const std::wstring _domain = utf8ToWstring(domain.c_str());
+            const std::wstring _path = ::hx::IsNull(path) ? L"" : utf8ToWstring(path.c_str());
+            const std::string _body = ::hx::IsNull(body) ? "" : std::string(body.c_str());
+            const std::wstring _headers = ::hx::IsNull(headers) ? L"" : utf8ToWstring(headers.c_str());
 
             ::WinHttpWrapper::HttpRequest req(_domain, port, https);
             ::WinHttpWrapper::HttpResponse response;
@@ -111,9 +133,6 @@ namespace linc {
                 // DELETE
                 req.Delete(_path, _headers, _body, response);
             }
-
-            std::cout << "Returned Text:" << response.text << std::endl;
-            std::cout << "Content Length:" << response.contentLength << std::endl << std::endl;
 
             ::Dynamic result = responseToHxObject(response);
 	        response.Reset();

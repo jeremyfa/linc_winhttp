@@ -1,15 +1,17 @@
 // The MIT License (MIT)
-// WinHTTP Wrapper 1.0.3
+// WinHTTP Wrapper 1.0.5
 // Copyright (C) 2020 - 2022, by Wong Shao Voon (shaovoon@yahoo.com)
 //
 // http://opensource.org/licenses/MIT
 
 // version 1.0.3: Set the text regardless the http status, not just for HTTP OK 200
 // version 1.0.4: Add hGetHeaderDictionary() and contentLength to HttpResponse class
+// version 1.0.5: Add binary response support with automatic content-type detection
 
 #include "WinHttpWrapper.h"
 #include <winhttp.h>
 #include "WinHttpWinVersion.h"
+#include <algorithm>
 
 #pragma comment(lib, "Winhttp.lib")
 
@@ -84,7 +86,8 @@ bool WinHttpWrapper::HttpRequest::Request(
 	return http(verb, m_UserAgent, m_Domain,
 		rest_of_path, m_Port, m_Secure,
 		requestHeader, body,
-		response.text, response.header,
+		response.text, response.binaryData, response.isBinary,
+		response.header,
 		response.statusCode,
 		response.contentLength,
 		response.error,
@@ -92,11 +95,85 @@ bool WinHttpWrapper::HttpRequest::Request(
 		m_ServerUsername, m_ServerPassword);
 }
 
+std::wstring WinHttpWrapper::HttpResponse::GetContentType()
+{
+	auto& headers = GetHeaderDictionary();
+	auto it = headers.find(L"Content-Type");
+	if (it != headers.end())
+	{
+		return it->second;
+	}
+	// Try lowercase version
+	it = headers.find(L"content-type");
+	if (it != headers.end())
+	{
+		return it->second;
+	}
+	return L"";
+}
+
+bool WinHttpWrapper::HttpResponse::IsBinaryMimeType(const std::wstring& contentType)
+{
+	if (contentType.empty())
+		return false;
+
+	// Remove parameters after semicolon (like charset)
+	std::wstring type = contentType;
+	size_t semicolonIndex = type.find(L';');
+	if (semicolonIndex != std::wstring::npos)
+	{
+		type = type.substr(0, semicolonIndex);
+	}
+
+	// Trim whitespace and convert to lowercase
+	// Remove leading/trailing spaces
+	size_t start = type.find_first_not_of(L" \t\r\n");
+	if (start == std::wstring::npos)
+		return false;
+
+	size_t end = type.find_last_not_of(L" \t\r\n");
+	type = type.substr(start, end - start + 1);
+
+	// Convert to lowercase
+	std::transform(type.begin(), type.end(), type.begin(), ::towlower);
+
+	// If it starts with "text/", it's not binary
+	if (type.find(L"text/") == 0)
+	{
+		return false;
+	}
+
+	// Check against known text-based MIME types
+	if (type == L"text/html" ||
+		type == L"text/css" ||
+		type == L"text/xml" ||
+		type == L"application/javascript" ||
+		type == L"application/atom+xml" ||
+		type == L"application/rss+xml" ||
+		type == L"text/mathml" ||
+		type == L"text/plain" ||
+		type == L"text/vnd.sun.j2me.app-descriptor" ||
+		type == L"text/vnd.wap.wml" ||
+		type == L"text/x-component" ||
+		type == L"image/svg+xml" ||
+		type == L"application/json" ||
+		type == L"application/rtf" ||
+		type == L"application/x-perl" ||
+		type == L"application/xhtml+xml" ||
+		type == L"application/xspf+xml")
+	{
+		return false;
+	}
+
+	// Everything else is considered binary
+	return true;
+}
 
 bool WinHttpWrapper::HttpRequest::http(const std::wstring& verb, const std::wstring& user_agent, const std::wstring& domain,
 	const std::wstring& rest_of_path, int port, bool secure,
 	const std::wstring& requestHeader, const std::string& body,
-	std::string& text, std::wstring& responseHeader, DWORD& dwStatusCode, DWORD& dwContent, std::wstring& error,
+	std::string& text, std::vector<uint8_t>& binaryData, bool& isBinary,
+	std::wstring& responseHeader, DWORD& dwStatusCode, DWORD& dwContent, std::wstring& error,
 	const std::wstring& szProxyUsername, const std::wstring& szProxyPassword,
 	const std::wstring& szServerUsername, const std::wstring& szServerPassword)
 {
@@ -117,6 +194,7 @@ bool WinHttpWrapper::HttpRequest::http(const std::wstring& verb, const std::wstr
 		WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY : WINHTTP_ACCESS_TYPE_DEFAULT_PROXY;
 
 	dwStatusCode = 0;
+	isBinary = false;
 
 	// Use WinHttpOpen to obtain a session handle.
 	hSession = WinHttpOpen(user_agent.c_str(),
@@ -253,39 +331,84 @@ bool WinHttpWrapper::HttpRequest::http(const std::wstring& verb, const std::wstr
 		// Keep checking for data until there is nothing left.
 		if (bResults)
 		{
-			std::string temp;
-			text = "";
-			do
+			// Determine content type and whether response is binary
+			// We need to create a temporary HttpResponse to use the parsing methods
+			HttpResponse tempResponse;
+			tempResponse.header = responseHeader;
+			std::wstring contentType = tempResponse.GetContentType();
+			isBinary = HttpResponse::IsBinaryMimeType(contentType);
+
+			if (isBinary)
 			{
-				// Check for available data.
-				dwSize = 0;
-				if (!WinHttpQueryDataAvailable(hRequest, &dwSize))
+				// Read as binary data
+				binaryData.clear();
+				do
 				{
-					error = L"Error in WinHttpQueryDataAvailable: ";
-					error += std::to_wstring(GetLastError());
-				}
+					// Check for available data.
+					dwSize = 0;
+					if (!WinHttpQueryDataAvailable(hRequest, &dwSize))
+					{
+						error = L"Error in WinHttpQueryDataAvailable: ";
+						error += std::to_wstring(GetLastError());
+					}
 
-				dwContent += dwSize;
-				if (dwSize == 0)
-					break;
+					dwContent += dwSize;
+					if (dwSize == 0)
+						break;
 
-				// Allocate space for the buffer.
-				temp = "";
-				temp.resize(dwSize);
-				// Read the data.
-				ZeroMemory((void*)(&temp[0]), dwSize);
-				if (!WinHttpReadData(hRequest, (LPVOID)(&temp[0]),
-					dwSize, &dwDownloaded))
-				{
-					error = L"Error in WinHttpReadData: ";
-					error += std::to_wstring(GetLastError());
+					// Allocate space for the buffer.
+					std::vector<uint8_t> temp(dwSize);
+					// Read the data.
+					if (!WinHttpReadData(hRequest, (LPVOID)temp.data(),
+						dwSize, &dwDownloaded))
+					{
+						error = L"Error in WinHttpReadData: ";
+						error += std::to_wstring(GetLastError());
+					}
+					else
+					{
+						binaryData.insert(binaryData.end(), temp.begin(), temp.begin() + dwDownloaded);
+					}
 				}
-				else
-				{
-					text += temp;
-				}
+				while (dwSize > 0);
 			}
-			while (dwSize > 0);
+			else
+			{
+				// Read as text data (original logic)
+				std::string temp;
+				text = "";
+				do
+				{
+					// Check for available data.
+					dwSize = 0;
+					if (!WinHttpQueryDataAvailable(hRequest, &dwSize))
+					{
+						error = L"Error in WinHttpQueryDataAvailable: ";
+						error += std::to_wstring(GetLastError());
+					}
+
+					dwContent += dwSize;
+					if (dwSize == 0)
+						break;
+
+					// Allocate space for the buffer.
+					temp = "";
+					temp.resize(dwSize);
+					// Read the data.
+					ZeroMemory((void*)(&temp[0]), dwSize);
+					if (!WinHttpReadData(hRequest, (LPVOID)(&temp[0]),
+						dwSize, &dwDownloaded))
+					{
+						error = L"Error in WinHttpReadData: ";
+						error += std::to_wstring(GetLastError());
+					}
+					else
+					{
+						text += temp;
+					}
+				}
+				while (dwSize > 0);
+			}
 
 			switch (dwStatusCode)
 			{

@@ -1,15 +1,17 @@
 // The MIT License (MIT)
-// WinHTTP Wrapper 1.0.3
+// WinHTTP Wrapper 1.0.4
 // Copyright (C) 2020 - 2022, by Wong Shao Voon (shaovoon@yahoo.com)
 //
 // http://opensource.org/licenses/MIT
 
 // version 1.0.3: Set the text regardless the http status, not just for HTTP OK 200
 // version 1.0.4: Add hGetHeaderDictionary() and contentLength to HttpResponse class
+// version 1.0.5: Add binary response support with automatic content-type detection
 
 #pragma once
 
 #include <string>
+#include <vector>
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <unordered_map>
@@ -18,23 +20,33 @@ namespace WinHttpWrapper
 {
 	struct HttpResponse
 	{
-		HttpResponse() : statusCode(0), contentLength(0) {}
+		HttpResponse() : statusCode(0), contentLength(0), isBinary(false) {}
 		void Reset()
 		{
 			text = "";
+			binaryData.clear();
 			header = L"";
 			statusCode = 0;
 			error = L"";
 			dict.clear();
 			contentLength = 0;
+			isBinary = false;
 		}
 		std::unordered_map<std::wstring, std::wstring>& GetHeaderDictionary();
 
-		std::string text;
+		// Get content type from response headers
+		std::wstring GetContentType();
+
+		// Check if content type indicates binary data
+		static bool IsBinaryMimeType(const std::wstring& contentType);
+
+		std::string text;           // For text responses
+		std::vector<uint8_t> binaryData;  // For binary responses
 		std::wstring header;
 		DWORD statusCode;
 		DWORD contentLength;
 		std::wstring error;
+		bool isBinary;              // True if response is binary
 	private:
 		std::unordered_map<std::wstring, std::wstring> dict;
 	};
@@ -89,7 +101,8 @@ namespace WinHttpWrapper
 			const std::wstring& verb, const std::wstring& user_agent, const std::wstring& domain,
 			const std::wstring& rest_of_path, int port, bool secure,
 			const std::wstring& requestHeader, const std::string& body,
-			std::string& text, std::wstring& responseHeader,
+			std::string& text, std::vector<uint8_t>& binaryData, bool& isBinary,
+			std::wstring& responseHeader,
 			DWORD& statusCode, DWORD& dwContent, std::wstring& error,
 			const std::wstring& szProxyUsername, const std::wstring& szProxyPassword,
 			const std::wstring& szServerUsername, const std::wstring& szServerPassword);

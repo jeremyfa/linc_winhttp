@@ -9,7 +9,7 @@
 namespace linc {
     namespace winhttp {
 
-        ::Dynamic sendHttpRequest(int requestId, ::String domain, int port, bool https, ::String path, int method, ::String body, ::String headers, ::String proxy, int timeout);
+        ::Dynamic sendHttpRequest(::String domain, int port, bool https, ::String path, int method, ::String body, ::String headers, ::String proxy, int timeout);
 
     }
 }

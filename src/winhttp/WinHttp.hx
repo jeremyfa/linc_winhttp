@@ -20,6 +20,8 @@ typedef WinHttpResponse = {
 
     public var content:String;
 
+    public var binaryContent:Bytes;
+
     public var error:String;
 
 }
@@ -28,7 +30,7 @@ typedef WinHttpResponse = {
 @:keepSub
 class WinHttp {
 
-    public static function sendHttpRequest(requestId:Int, url:String, method:WinHttpMethod, body:String, headers:Map<String,String>, proxy:String, timeout:Int):WinHttpResponse {
+    public static function sendHttpRequest(url:String, method:WinHttpMethod, body:String, headers:Map<String,String>, proxy:String, timeout:Int):WinHttpResponse {
 
         var domain = "";
         var port = 80;
@@ -52,6 +54,7 @@ class WinHttp {
         }
 
         var rawHeaders = new StringBuf();
+        var first = true;
         if (headers != null) {
             for (key => val in headers) {
                 rawHeaders.add(key);
@@ -60,10 +63,11 @@ class WinHttp {
                 rawHeaders.add(val);
                 rawHeaders.addChar('\r'.code);
                 rawHeaders.addChar('\n'.code);
+                first = false;
             }
         }
 
-        final rawResponse:Dynamic = WinHttp_Extern.sendHttpRequest(requestId, domain, port, https, path, method, body, rawHeaders.toString(), proxy, timeout);
+        final rawResponse:Dynamic = WinHttp_Extern.sendHttpRequest(domain, port, https, path, method, body, rawHeaders.toString(), proxy, timeout);
 
         final responseHeaders = new Map<String,String>();
         final rawResponseHeaders:String = rawResponse.headers;
@@ -92,8 +96,9 @@ class WinHttp {
         final response:WinHttpResponse = {
             status: rawResponse.status,
             headers: responseHeaders,
-            content: rawResponse.text,
-            error: rawResponse.error
+            content: rawResponse.content,
+            error: rawResponse.error,
+            binaryContent: rawResponse.binaryContent != null ? Bytes.ofData(rawResponse.binaryContent) : null
         };
 
         return response;
@@ -110,6 +115,6 @@ class WinHttp {
 extern class WinHttp_Extern {
 
     @:native('::linc::winhttp::sendHttpRequest')
-    static function sendHttpRequest(requestId:Int, domain:String, port:Int, https:Bool, path:String, method:Int, body:String, headers:String, proxy:String, timeout:Int):Dynamic;
+    static function sendHttpRequest(domain:String, port:Int, https:Bool, path:String, method:Int, body:String, headers:String, proxy:String, timeout:Int):Dynamic;
 
 }
