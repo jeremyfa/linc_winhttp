@@ -117,6 +117,11 @@ namespace linc {
             ::WinHttpWrapper::HttpRequest req(_domain, port, https);
             ::WinHttpWrapper::HttpResponse response;
 
+            if (!( ::hx::IsNull(proxy))) {
+                const std::wstring _proxy = utf8ToWstring(proxy.c_str());
+                req.SetProxy(_proxy);
+            }
+
             if (method == 0) {
                 // GET
                 req.Get(_path, _headers, response);

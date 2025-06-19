@@ -1,5 +1,5 @@
 // The MIT License (MIT)
-// WinHTTP Wrapper 1.0.4
+// WinHTTP Wrapper 1.0.6
 // Copyright (C) 2020 - 2022, by Wong Shao Voon (shaovoon@yahoo.com)
 //
 // http://opensource.org/licenses/MIT
@@ -7,6 +7,7 @@
 // version 1.0.3: Set the text regardless the http status, not just for HTTP OK 200
 // version 1.0.4: Add hGetHeaderDictionary() and contentLength to HttpResponse class
 // version 1.0.5: Add binary response support with automatic content-type detection
+// version 1.0.6: Use DEFAULT_PROXY consistently, add explicit proxy URL support with credential parsing
 
 #pragma once
 
@@ -62,7 +63,8 @@ namespace WinHttpWrapper
 			const std::wstring& proxy_username = L"",
 			const std::wstring& proxy_password = L"",
 			const std::wstring& server_username = L"",
-			const std::wstring& server_password = L"")
+			const std::wstring& server_password = L"",
+			const std::wstring& proxy_url = L"")
 			: m_Domain(domain)
 			, m_Port(port)
 			, m_Secure(secure)
@@ -71,7 +73,44 @@ namespace WinHttpWrapper
 			, m_ProxyPassword(proxy_password)
 			, m_ServerUsername(server_username)
 			, m_ServerPassword(server_password)
+			, m_ProxyUrl(proxy_url)
 		{}
+
+		// Set explicit proxy URL with support for multiple formats:
+		// - "proxy.company.com:8080"
+		// - "http://proxy.company.com:8080"
+		// - "http://user:pass@proxy.company.com:8080"
+		// - "https://user:pass@proxy.company.com:8080"
+		void SetProxy(const std::wstring& proxy_url);
+
+		// Set proxy with separate credentials (legacy method)
+		void SetProxyWithCredentials(const std::wstring& proxy_url,
+			const std::wstring& username, const std::wstring& password) {
+			m_ProxyUrl = proxy_url;
+			m_ProxyUsername = username;
+			m_ProxyPassword = password;
+		}
+
+		// Clear proxy URL to use default system proxy
+		void ClearProxy() {
+			m_ProxyUrl.clear();
+			m_ProxyUsername.clear();
+			m_ProxyPassword.clear();
+		}
+
+		// Get current proxy URL
+		const std::wstring& GetProxy() const {
+			return m_ProxyUrl;
+		}
+
+		// Get proxy credentials (for debugging/verification)
+		std::wstring GetProxyUsername() const {
+			return m_ProxyUsername;
+		}
+
+		bool HasProxyCredentials() const {
+			return !m_ProxyUsername.empty();
+		}
 
 		bool Get(const std::wstring& rest_of_path,
 			const std::wstring& requestHeader,
@@ -105,7 +144,8 @@ namespace WinHttpWrapper
 			std::wstring& responseHeader,
 			DWORD& statusCode, DWORD& dwContent, std::wstring& error,
 			const std::wstring& szProxyUsername, const std::wstring& szProxyPassword,
-			const std::wstring& szServerUsername, const std::wstring& szServerPassword);
+			const std::wstring& szServerUsername, const std::wstring& szServerPassword,
+			const std::wstring& szProxyUrl);
 
 		static DWORD ChooseAuthScheme(DWORD dwSupportedSchemes);
 
@@ -117,6 +157,7 @@ namespace WinHttpWrapper
 		std::wstring m_ProxyPassword;
 		std::wstring m_ServerUsername;
 		std::wstring m_ServerPassword;
+		std::wstring m_ProxyUrl;  // Explicit proxy URL
 	};
 
 }

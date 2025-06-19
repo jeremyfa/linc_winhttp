@@ -1,5 +1,5 @@
 // The MIT License (MIT)
-// WinHTTP Wrapper 1.0.5
+// WinHTTP Wrapper 1.0.6
 // Copyright (C) 2020 - 2022, by Wong Shao Voon (shaovoon@yahoo.com)
 //
 // http://opensource.org/licenses/MIT
@@ -7,10 +7,10 @@
 // version 1.0.3: Set the text regardless the http status, not just for HTTP OK 200
 // version 1.0.4: Add hGetHeaderDictionary() and contentLength to HttpResponse class
 // version 1.0.5: Add binary response support with automatic content-type detection
+// version 1.0.6: Use DEFAULT_PROXY consistently, add explicit proxy URL support with credential parsing
 
 #include "WinHttpWrapper.h"
 #include <winhttp.h>
-#include "WinHttpWinVersion.h"
 #include <algorithm>
 
 #pragma comment(lib, "Winhttp.lib")
@@ -92,7 +92,63 @@ bool WinHttpWrapper::HttpRequest::Request(
 		response.contentLength,
 		response.error,
 		m_ProxyUsername, m_ProxyPassword,
-		m_ServerUsername, m_ServerPassword);
+		m_ServerUsername, m_ServerPassword,
+		m_ProxyUrl);
+}
+
+void WinHttpWrapper::HttpRequest::SetProxy(const std::wstring& proxy_url)
+{
+	if (proxy_url.empty())
+	{
+		ClearProxy();
+		return;
+	}
+
+	std::wstring url = proxy_url;
+
+	// Clear existing proxy credentials
+	m_ProxyUsername.clear();
+	m_ProxyPassword.clear();
+
+	// Remove protocol prefix if present (http:// or https://)
+	if (url.find(L"http://") == 0)
+	{
+		url = url.substr(7);
+	}
+	else if (url.find(L"https://") == 0)
+	{
+		url = url.substr(8);
+	}
+
+	// Check for username:password@ format
+	size_t atPos = url.find(L'@');
+	if (atPos != std::wstring::npos)
+	{
+		std::wstring credentials = url.substr(0, atPos);
+		url = url.substr(atPos + 1); // Remove credentials part from URL
+
+		// Split username:password
+		size_t colonPos = credentials.find(L':');
+		if (colonPos != std::wstring::npos)
+		{
+			m_ProxyUsername = credentials.substr(0, colonPos);
+			m_ProxyPassword = credentials.substr(colonPos + 1);
+		}
+		else
+		{
+			// Only username provided
+			m_ProxyUsername = credentials;
+		}
+	}
+
+	// Store the cleaned proxy URL (host:port format)
+	m_ProxyUrl = url;
+
+	// Ensure default port if none specified
+	if (m_ProxyUrl.find(L':') == std::wstring::npos)
+	{
+		m_ProxyUrl += L":8080"; // Default proxy port
+	}
 }
 
 std::wstring WinHttpWrapper::HttpResponse::GetContentType()
@@ -175,7 +231,8 @@ bool WinHttpWrapper::HttpRequest::http(const std::wstring& verb, const std::wstr
 	std::string& text, std::vector<uint8_t>& binaryData, bool& isBinary,
 	std::wstring& responseHeader, DWORD& dwStatusCode, DWORD& dwContent, std::wstring& error,
 	const std::wstring& szProxyUsername, const std::wstring& szProxyPassword,
-	const std::wstring& szServerUsername, const std::wstring& szServerPassword)
+	const std::wstring& szServerUsername, const std::wstring& szServerPassword,
+	const std::wstring& szProxyUrl)
 {
 	DWORD dwSupportedSchemes;
 	DWORD dwFirstScheme;
@@ -190,8 +247,26 @@ bool WinHttpWrapper::HttpRequest::http(const std::wstring& verb, const std::wstr
 	HINTERNET hRequest = NULL;
 	BOOL bDone = FALSE;
 	DWORD dwProxyAuthScheme = 0;
-	DWORD dwAccessType = WinHttpWinVersion::IsBuildNumGreaterOrEqual(9600) ?
-		WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY : WINHTTP_ACCESS_TYPE_DEFAULT_PROXY;
+
+	// Determine proxy configuration
+	DWORD dwAccessType;
+	LPCWSTR lpszProxy;
+	LPCWSTR lpszProxyBypass;
+
+	if (!szProxyUrl.empty())
+	{
+		// Use explicit proxy URL
+		dwAccessType = WINHTTP_ACCESS_TYPE_NAMED_PROXY;
+		lpszProxy = szProxyUrl.c_str();
+		lpszProxyBypass = WINHTTP_NO_PROXY_BYPASS;
+	}
+	else
+	{
+		// Use default system proxy settings consistently across all Windows versions
+		dwAccessType = WINHTTP_ACCESS_TYPE_DEFAULT_PROXY;
+		lpszProxy = WINHTTP_NO_PROXY_NAME;
+		lpszProxyBypass = WINHTTP_NO_PROXY_BYPASS;
+	}
 
 	dwStatusCode = 0;
 	isBinary = false;
@@ -199,8 +274,8 @@ bool WinHttpWrapper::HttpRequest::http(const std::wstring& verb, const std::wstr
 	// Use WinHttpOpen to obtain a session handle.
 	hSession = WinHttpOpen(user_agent.c_str(),
 		dwAccessType,
-		WINHTTP_NO_PROXY_NAME,
-		WINHTTP_NO_PROXY_BYPASS, 0);
+		lpszProxy,
+		lpszProxyBypass, 0);
 
 	// Specify an HTTP server.
 	if (hSession)
