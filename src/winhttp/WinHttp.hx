@@ -30,6 +30,12 @@ typedef WinHttpResponse = {
 @:keepSub
 class WinHttp {
 
+    public static function enableDebugLogging(enabled:Bool):Void {
+
+        WinHttp_Extern.enableDebugLogging(enabled);
+
+    }
+
     public static function sendHttpRequest(url:String, method:WinHttpMethod, body:String, headers:Map<String,String>, proxy:String, timeout:Int):WinHttpResponse {
 
         var domain = "";
@@ -113,6 +119,9 @@ class WinHttp {
 #end
 @:include('linc_winhttp.h')
 extern class WinHttp_Extern {
+
+    @:native('::linc::winhttp::enableDebugLogging')
+    static function enableDebugLogging(enabled:Bool):Void;
 
     @:native('::linc::winhttp::sendHttpRequest')
     static function sendHttpRequest(domain:String, port:Int, https:Bool, path:String, method:Int, body:String, headers:String, proxy:String, timeout:Int):Dynamic;

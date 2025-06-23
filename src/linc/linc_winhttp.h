@@ -9,6 +9,8 @@
 namespace linc {
     namespace winhttp {
 
+        void enableDebugLogging(bool enabled);
+
         ::Dynamic sendHttpRequest(::String domain, int port, bool https, ::String path, int method, ::String body, ::String headers, ::String proxy, int timeout);
 
     }

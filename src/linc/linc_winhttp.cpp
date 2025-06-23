@@ -13,6 +13,12 @@
 namespace linc {
     namespace winhttp {
 
+        void enableDebugLogging(bool enabled) {
+
+            WinHttpWrapper::EnableDebugLogging(enabled);
+
+        }
+
         /**
          * Convert UTF-8 encoded C string to wstring
          * @param utf8_cstr UTF-8 encoded null-terminated C string

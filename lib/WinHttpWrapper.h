@@ -13,12 +13,25 @@
 
 #include <string>
 #include <vector>
+#include <functional>
+#include <mutex>
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <unordered_map>
 
 namespace WinHttpWrapper
 {
+	// Debug logging callback type
+	using DebugLogCallback = std::function<void(const std::wstring& message)>;
+
+	// Static debug logging methods
+	void EnableDebugLogging(bool enable = true);
+	void DisableDebugLogging();
+	bool IsDebugLoggingEnabled();
+	void SetDebugLogCallback(DebugLogCallback callback);
+	void DebugLog(const std::wstring& message);
+	void DebugLogFormat(const wchar_t* format, ...);
+
 	struct HttpResponse
 	{
 		HttpResponse() : statusCode(0), contentLength(0), isBinary(false) {}
@@ -76,6 +89,23 @@ namespace WinHttpWrapper
 			, m_ProxyUrl(proxy_url)
 		{}
 
+		// Static debug logging control methods (convenience wrappers)
+		static void EnableDebugLogging(bool enable = true) {
+			WinHttpWrapper::EnableDebugLogging(enable);
+		}
+
+		static void DisableDebugLogging() {
+			WinHttpWrapper::DisableDebugLogging();
+		}
+
+		static bool IsDebugLoggingEnabled() {
+			return WinHttpWrapper::IsDebugLoggingEnabled();
+		}
+
+		static void SetDebugLogCallback(DebugLogCallback callback) {
+			WinHttpWrapper::SetDebugLogCallback(callback);
+		}
+
 		// Set explicit proxy URL with support for multiple formats:
 		// - "proxy.company.com:8080"
 		// - "http://proxy.company.com:8080"
@@ -86,6 +116,10 @@ namespace WinHttpWrapper
 		// Set proxy with separate credentials (legacy method)
 		void SetProxyWithCredentials(const std::wstring& proxy_url,
 			const std::wstring& username, const std::wstring& password) {
+			if (WinHttpWrapper::IsDebugLoggingEnabled()) {
+				WinHttpWrapper::DebugLogFormat(L"[PROXY] SetProxyWithCredentials called - URL: '%s', Username: '%s'",
+					proxy_url.c_str(), username.c_str());
+			}
 			m_ProxyUrl = proxy_url;
 			m_ProxyUsername = username;
 			m_ProxyPassword = password;
@@ -93,6 +127,9 @@ namespace WinHttpWrapper
 
 		// Clear proxy URL to use default system proxy
 		void ClearProxy() {
+			if (WinHttpWrapper::IsDebugLoggingEnabled()) {
+				WinHttpWrapper::DebugLog(L"[PROXY] ClearProxy called - switching to default system proxy");
+			}
 			m_ProxyUrl.clear();
 			m_ProxyUsername.clear();
 			m_ProxyPassword.clear();
