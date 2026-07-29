@@ -115,34 +115,46 @@ namespace linc {
                 return errResult;
             }
 
+            // Copy every input out of GC memory first: the blocking WinHTTP
+            // calls below run inside a hxcpp GC free zone, where touching
+            // GC-managed values (::String, ...) is forbidden.
             const std::wstring _domain = utf8ToWstring(domain.c_str());
             const std::wstring _path = ::hx::IsNull(path) ? L"" : utf8ToWstring(path.c_str());
             const std::string _body = ::hx::IsNull(body) ? "" : std::string(body.c_str());
             const std::wstring _headers = ::hx::IsNull(headers) ? L"" : utf8ToWstring(headers.c_str());
+            const bool _hasProxy = !( ::hx::IsNull(proxy));
+            const std::wstring _proxy = _hasProxy ? utf8ToWstring(proxy.c_str()) : L"";
 
             ::WinHttpWrapper::HttpRequest req(_domain, port, https);
             ::WinHttpWrapper::HttpResponse response;
 
-            if (!( ::hx::IsNull(proxy))) {
-                const std::wstring _proxy = utf8ToWstring(proxy.c_str());
-                req.SetProxy(_proxy);
-            }
+            {
+                // Without this zone, a slow request would make the garbage
+                // collector wait for this thread until WinHTTP returns,
+                // freezing every other Haxe thread whenever a collection
+                // triggers during the call.
+                hx::AutoGCFreeZone gcFreeZone;
 
-            if (method == 0) {
-                // GET
-                req.Get(_path, _headers, response);
-            }
-            else if (method == 1) {
-                // POST
-                req.Post(_path, _headers, _body, response);
-            }
-            else if (method == 2) {
-                // PUT
-                req.Put(_path, _headers, _body, response);
-            }
-            else if (method == 3) {
-                // DELETE
-                req.Delete(_path, _headers, _body, response);
+                if (_hasProxy) {
+                    req.SetProxy(_proxy);
+                }
+
+                if (method == 0) {
+                    // GET
+                    req.Get(_path, _headers, response);
+                }
+                else if (method == 1) {
+                    // POST
+                    req.Post(_path, _headers, _body, response);
+                }
+                else if (method == 2) {
+                    // PUT
+                    req.Put(_path, _headers, _body, response);
+                }
+                else if (method == 3) {
+                    // DELETE
+                    req.Delete(_path, _headers, _body, response);
+                }
             }
 
             ::Dynamic result = responseToHxObject(response);
